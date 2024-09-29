@@ -16,7 +16,8 @@ public class RoutePlanningService {
     private static final double WALK_SPEED = 5.0 * 1000 / 60; // 转换为米/分钟
     private static final double MAX_WALK_DISTANCE = 2000; // 转换为米
     private static final double WAGE_PER_MINUTE = 0.83;
-
+    private static final double MAX_TRANSFER_DISTANCE = 1000;
+    private static final int MAX_NEARBY_STATIONS = 5;
 
     public RoutePlanningService(RouteRepository routeRepository) {
         this.routeRepository = routeRepository;
@@ -217,7 +218,6 @@ public class RoutePlanningService {
 
     // 找到最近的站点
     private List<Station> findNearestStations(double lat, double lon, int limit) {
-        System.out.println(routeRepository.findNearestStations(lat, lon, limit));
         return routeRepository.findNearestStations(lat, lon, limit);
     }
 
@@ -304,6 +304,11 @@ public class RoutePlanningService {
             Station from = stationPath.get(i);
             Station to = stationPath.get(i + 1);
             Route route = findRouteBetweenStations(from, to);
+
+            if (route == null || needsWalkTransfer(from, to, route)) {
+                // 如果找不到直接路线，或者需要步行换乘，添加步行段
+                addWalkSegment(fullPath, from.getLatitude(), from.getLongitude(), to.getLatitude(), to.getLongitude(), from, to);
+            }
             fullPath.add(new TravelSegment(TravelMode.PUBLIC_TRANSPORT, route, from, to,
                                            from.getLatitude(), from.getLongitude(),
                                            to.getLatitude(), to.getLongitude(), route.getTravelTime()));
@@ -311,12 +316,24 @@ public class RoutePlanningService {
 
         // 添加从最后一个车站到终点的步行段
         Station lastStation = stationPath.get(stationPath.size() - 1);
-        walkDistance = calculateDistance(lastStation.getLatitude(), lastStation.getLongitude(), endLat, endLon);
-        walkDuration = walkDistance / WALK_SPEED;
-        fullPath.add(new TravelSegment(TravelMode.WALK, null, lastStation, null,
-                                       lastStation.getLatitude(), lastStation.getLongitude(), endLat, endLon, walkDuration));
-
+        addWalkSegment(fullPath, lastStation.getLatitude(), lastStation.getLongitude(), endLat, endLon, lastStation, null);
         return fullPath;
+    }
+    // 判断是否需要步行换乘
+    private boolean needsWalkTransfer(Station from, Station to, Route route) {
+        if (from.getStationType().equals("bus") && to.getStationType().equals("bus")) {
+            // 如果两个站点都是公交站，检查它们是否在同一条线路上
+            return route.getLineId() != findRouteBetweenStations(from, from).getLineId();
+        }
+        // 对于地铁站，假设可以直接换乘
+        return false;
+    }
+
+    private void addWalkSegment(List<TravelSegment> path, double startLat, double startLon,
+                                double endLat, double endLon, Station from, Station to) {
+        double walkDistance = calculateDistance(startLat, startLon, endLat, endLon);
+        double walkDuration = walkDistance / WALK_SPEED;
+        path.add(new TravelSegment(TravelMode.WALK, null, from, to, startLat, startLon, endLat, endLon, walkDuration));
     }
 
     private double calculateTotalTime(List<TravelSegment> path) {
@@ -324,7 +341,12 @@ public class RoutePlanningService {
     }
 
     private Route findRouteBetweenStations(Station from, Station to) {
-        return routeRepository.findRouteBetweenStations(from.getStationId(), to.getStationId());
+        try {
+            return routeRepository.findRouteBetweenStations(from.getStationId(), to.getStationId());
+        } catch (Exception e) {
+            // 如果找不到直接路线，返回null
+            return null;
+        }
     }
 
     private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
