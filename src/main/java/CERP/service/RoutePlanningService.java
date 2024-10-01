@@ -29,10 +29,10 @@ public class RoutePlanningService {
         // 找到最近的起点和终点
         List<Station> nearestStartStations = findNearestStations(startLat, startLon, 5);
         List<Station> nearestEndStations = findNearestStations(endLat, endLon, 5);
+        double estimatedWalkDistance = calculateDistance(startLat, startLon, nearestStartStations.get(0).getLatitude(), nearestStartStations.get(0).getLongitude())
+                + calculateDistance(endLat, endLon, nearestEndStations.get(0).getLatitude(), nearestEndStations.get(0).getLongitude());
 
-        if (directDistance <= MAX_WALK_DISTANCE && directDistance <=
-                calculateDistance(startLat, startLon, nearestStartStations.get(0).getLatitude(), nearestStartStations.get(0).getLongitude())
-        + calculateDistance(endLat, endLon, nearestEndStations.get(0).getLatitude(), nearestEndStations.get(0).getLongitude())) {
+        if (directDistance <= estimatedWalkDistance) {
             double walkDuration = directDistance / WALK_SPEED;
             List<TravelSegment> directWalk = Collections.singletonList(
                     new TravelSegment(TravelMode.WALK, null, null, null, startLat, startLon, endLat, endLon, walkDuration)
@@ -64,13 +64,11 @@ public class RoutePlanningService {
 
     public RouteResult findMostCostEffectivePath(double startLat, double startLon, double endLat, double endLon) {
         double directDistance = calculateDistance(startLat, startLon, endLat, endLon);
-
         List<Station> nearestStartStations = findNearestStations(startLat, startLon, 5);
         List<Station> nearestEndStations = findNearestStations(endLat, endLon, 5);
-
-        if (directDistance <= MAX_WALK_DISTANCE && directDistance <=
-                calculateDistance(startLat, startLon, nearestStartStations.get(0).getLatitude(), nearestStartStations.get(0).getLongitude())
-                        + calculateDistance(endLat, endLon, nearestEndStations.get(0).getLatitude(), nearestEndStations.get(0).getLongitude())) {
+        double estimatedWalkDistance = calculateDistance(startLat, startLon, nearestStartStations.get(0).getLatitude(), nearestStartStations.get(0).getLongitude())
+                + calculateDistance(endLat, endLon, nearestEndStations.get(0).getLatitude(), nearestEndStations.get(0).getLongitude());
+        if (directDistance <= estimatedWalkDistance) {
             double walkDuration = directDistance / WALK_SPEED;
             List<TravelSegment> directWalk = Collections.singletonList(
                     new TravelSegment(TravelMode.WALK, null, null, null, startLat, startLon, endLat, endLon, walkDuration)

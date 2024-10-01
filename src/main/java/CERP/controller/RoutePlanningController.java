@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
+@CrossOrigin
 @RequestMapping("/api/route")
 public class RoutePlanningController {
     private final RoutePlanningService routePlanningService;
