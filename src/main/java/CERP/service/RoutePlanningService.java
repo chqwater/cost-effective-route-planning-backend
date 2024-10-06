@@ -41,25 +41,29 @@ public class RoutePlanningService {
             return new RouteResult(directWalk, totalCost);
         }
 
-        List<TravelSegment> bestPath = null;
-        double bestTotalTime = Double.MAX_VALUE;
+        record PathResult(List<TravelSegment> path, double totalTime) {}
 
-        for (Station startStation : nearestStartStations) {
-            for (Station endStation : nearestEndStations) {
-                List<Station> path = findShortestPathBetweenStations(startStation, endStation);
-                if (path != null) {
-                    List<TravelSegment> fullPath = createFullPath(startLat, startLon, path, endLat, endLon);
-                    double totalTime = calculateTotalTime(fullPath);
-                    if (totalTime < bestTotalTime) {
-                        bestTotalTime = totalTime;
-                        bestPath = fullPath;
+        PathResult bestResult = nearestStartStations.parallelStream()
+            .flatMap(startStation -> nearestEndStations.stream()
+                .map(endStation -> {
+                    List<Station> path = findShortestPathBetweenStations(startStation, endStation);
+                    if (path != null) {
+                        List<TravelSegment> fullPath = createFullPath(startLat, startLon, path, endLat, endLon);
+                        double totalTime = calculateTotalTime(fullPath);
+                        return new PathResult(fullPath, totalTime);
                     }
-                }
-            }
+                    return null;
+                }))
+            .filter(Objects::nonNull)
+            .min(Comparator.comparingDouble(PathResult::totalTime))
+            .orElse(null);
+
+        if (bestResult != null) {
+            double totalCost = calculateMoneyCost(bestResult.path);
+            return new RouteResult(bestResult.path, totalCost);
         }
 
-        double totalCost = calculateMoneyCost(bestPath);
-        return new RouteResult(bestPath, totalCost);
+        return null; // 或者返回一个表示没有找到路径的结果
     }
 
     public RouteResult findMostCostEffectivePath(double startLat, double startLon, double endLat, double endLon) {
@@ -77,24 +81,29 @@ public class RoutePlanningService {
             return new RouteResult(directWalk, totalCost);
         }
 
-        List<TravelSegment> bestPath = null;
-        double bestTotalCost = Double.MAX_VALUE;
+        record PathResult(List<TravelSegment> path, double totalCost) {}
 
-        for (Station startStation : nearestStartStations) {
-            for (Station endStation : nearestEndStations) {
-                List<Station> path = findMostCostEffectivePathBetweenStations(startStation, endStation);
-                if (path != null) {
-                    List<TravelSegment> fullPath = createFullPath(startLat, startLon, path, endLat, endLon);
-                    double totalCost = calculateTotalCost(fullPath);
-                    if (totalCost < bestTotalCost) {
-                        bestTotalCost = totalCost;
-                        bestPath = fullPath;
+        PathResult bestResult = nearestStartStations.parallelStream()
+            .flatMap(startStation -> nearestEndStations.stream()
+                .map(endStation -> {
+                    List<Station> path = findMostCostEffectivePathBetweenStations(startStation, endStation);
+                    if (path != null) {
+                        List<TravelSegment> fullPath = createFullPath(startLat, startLon, path, endLat, endLon);
+                        double totalCost = calculateTotalCost(fullPath);
+                        return new PathResult(fullPath, totalCost);
                     }
-                }
-            }
+                    return null;
+                }))
+            .filter(Objects::nonNull)
+            .min(Comparator.comparingDouble(PathResult::totalCost))
+            .orElse(null);
+
+        if (bestResult != null) {
+            double totalCost = calculateMoneyCost(bestResult.path);
+            return new RouteResult(bestResult.path, totalCost);
         }
-        double totalCost = calculateMoneyCost(bestPath);
-        return new RouteResult(bestPath, totalCost);
+
+        return null; // 或者返回一个表示没有找到路径的结果
     }
 
     private List<Station> findMostCostEffectivePathBetweenStations(Station start, Station end) {
@@ -115,17 +124,21 @@ public class RoutePlanningService {
 
             closedList.add(current.station.getStationId());
 
-            for (Route route : getAdjacentRoutes(current.station)) {
-                Station neighbor = routeRepository.findStationById(route.getToStationId());
-                if (closedList.contains(neighbor.getStationId())) {
+            // 预先获取所有相邻路线
+            List<Route> adjacentRoutes = getAdjacentRoutes(current.station);
+            
+            for (Route route : adjacentRoutes) {
+                int neighborId = route.getToStationId();
+                if (closedList.contains(neighborId)) {
                     continue;
                 }
 
                 double tentativeCost = current.gScore + calculateSegmentCost(route);
 
-                Node neighborNode = allNodes.getOrDefault(neighbor.getStationId(),
-                    new Node(neighbor, current, Double.MAX_VALUE, estimateCost(neighbor, end)));
-                allNodes.put(neighbor.getStationId(), neighborNode);
+                Node neighborNode = allNodes.computeIfAbsent(neighborId, k -> {
+                    Station neighbor = routeRepository.findStationById(neighborId);
+                    return new Node(neighbor, current, Double.MAX_VALUE, estimateCost(neighbor, end));
+                });
 
                 if (tentativeCost < neighborNode.gScore) {
                     neighborNode.parent = current;
@@ -133,6 +146,10 @@ public class RoutePlanningService {
                     neighborNode.fScore = neighborNode.gScore + neighborNode.hScore;
 
                     if (!openList.contains(neighborNode)) {
+                        openList.add(neighborNode);
+                    } else {
+                        // 更新优先队列中的节点
+                        openList.remove(neighborNode);
                         openList.add(neighborNode);
                     }
                 }
